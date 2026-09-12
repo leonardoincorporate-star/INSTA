@@ -1,3 +1,163 @@
-fastapi==0.110.0
-     uvicorn==0.29.0
-     requests==2.31.0
+"""
+Instagram Messaging Graph API Webhook & AI Auto-Responder Bot
+-------------------------------------------------------------
+Requirements:
+    pip install fastapi uvicorn requests
+
+Run locally:
+    uvicorn instagram_webhook_bot:app --host 0.0.0.0 --port 8000
+"""
+
+import os
+import re
+import requests
+from fastapi import FastAPI, Request, Response, status
+
+app = FastAPI(title="Instagram Auto-Responder Bot")
+
+# Config from Meta App Dashboard
+VERIFY_TOKEN = "MY_INSTA_SECRET_WEBHOOK_TOKEN_123"
+PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN", "EAA...")
+GRAPH_API_URL = "https://graph.facebook.com/v20.0/me/messages"
+
+# Keyword Rules Matrix
+KEYWORD_RULES = [
+    {
+        "keywords": [
+            "precio",
+            "costo",
+            "cuanto vale",
+            "cuánto",
+            "catalogo",
+            "catálogo",
+            "valor",
+            "disponible"
+        ],
+        "response": "¡Hola! 👋 ¡Con gusto te ayudamos! El precio es de $25 USD (o en Bs a la tasa del día). ✨ Tenemos disponibilidad inmediata. Puedes ver fotos y modelos en nuestro catálogo acá: https://wa.me/584120000000?text=Hola%20vi%20su%20Instagram. ¿Para qué ciudad sería tu pedido?"
+    },
+    {
+        "keywords": [
+            "envio",
+            "envío",
+            "delivery",
+            "zoom",
+            "mrw",
+            "tealca",
+            "despacho",
+            "entrega",
+            "agencia"
+        ],
+        "response": "¡Hola! 🚚 Envíos nacionales cobro a destino o gratis por MRW, ZOOM y Tealca. Delivery en moto en Caracas. Además realizamos entregas personales en Chacao, Caracas (Entregas personales previa cita). ¿En qué zona te encuentras para coordinar tu entrega?"
+    },
+    {
+        "keywords": [
+            "pago",
+            "pagar",
+            "zelle",
+            "pago movil",
+            "pago móvil",
+            "transferencia",
+            "binance",
+            "dolares",
+            "efectivo",
+            "bolivares",
+            "bs"
+        ],
+        "response": "¡Claro! Manejamos métodos de pago fáciles y rápidos: 💳 Pago Móvil (Banesco / Mercantil), Zelle, Binance USDT, Efectivo en divisas.. Al confirmar tu pedido te enviamos los datos exactos para transferir. ¿Cuál método prefieres utilizar?"
+    },
+    {
+        "keywords": [
+            "ubicacion",
+            "ubicación",
+            "donde estan",
+            "dónde están",
+            "horario",
+            "tienda",
+            "direccion",
+            "dirección",
+            "abiertos"
+        ],
+        "response": "¡Hola! 📍 Nuestra ubicación para entregas es en: Chacao, Caracas (Entregas personales previa cita). Atendemos de Lunes a Sábado de 9:00 AM a 6:00 PM. ¡Estaremos encantados de atenderte!"
+    },
+    {
+        "keywords": [
+            "hola",
+            "buenas",
+            "buenos dias",
+            "buenas tardes",
+            "buenas noches",
+            "hi",
+            "hello"
+        ],
+        "response": "¡Hola! 👋 ¡Bienvenido a TechStore Express! Gracias por escribirnos a nuestro Instagram. ¿En qué producto estás interesado el día de hoy?"
+    }
+]
+
+DEFAULT_FALLBACK = (
+    "¡Hola! 👋 Gracias por escribirnos a TechStore Express. "
+    "Manejamos pagos por Pago Móvil (Banesco / Mercantil), Zelle, Binance USDT, Efectivo en divisas.. "
+    "Envíos por Envíos nacionales cobro a destino o gratis por MRW, ZOOM y Tealca. Delivery en moto en Caracas.. "
+    "¿En qué podemos ayudarte hoy?"
+)
+
+def match_keyword_reply(user_message: str) -> str:
+    """Finds the best matching canned response or returns fallback."""
+    msg = user_message.lower()
+    for rule in KEYWORD_RULES:
+        for kw in rule["keywords"]:
+            if re.search(r"\b" + re.escape(kw) + r"\b", msg):
+                return rule["response"]
+    return DEFAULT_FALLBACK
+
+def send_instagram_dm(recipient_id: str, message_text: str):
+    """Sends a Direct Message back to the user via Meta Graph API."""
+    params = {"access_token": PAGE_ACCESS_TOKEN}
+    payload = {
+        "recipient": {"id": recipient_id},
+        "message": {"text": message_text}
+    }
+    try:
+        res = requests.post(GRAPH_API_URL, params=params, json=payload, timeout=10)
+        if res.status_code == 200:
+            print(f"[SUCCESS] Reply sent to {recipient_id}")
+        else:
+            print(f"[API ERROR] {res.status_code}: {res.text}")
+    except Exception as e:
+        print(f"[NETWORK ERROR] Failed sending message: {e}")
+
+@app.get("/webhook")
+async def verify_webhook(request: Request):
+    """Meta Webhook Challenge Verification."""
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        print("[WEBHOOK VERIFIED] Meta successfully subscribed to this server!")
+        return Response(content=challenge, media_type="text/plain")
+    return Response(content="Forbidden", status_code=status.HTTP_403_FORBIDDEN)
+
+@app.post("/webhook")
+async def handle_incoming_dm(request: Request):
+    """Receives real-time customer Direct Messages from Instagram."""
+    data = await request.json()
+
+    if data.get("object") == "instagram" or data.get("object") == "page":
+        for entry in data.get("entry", []):
+            for messaging_event in entry.get("messaging", []):
+                sender_id = messaging_event.get("sender", {}).get("id")
+                message_obj = messaging_event.get("message", {})
+
+                # Ignore echo messages sent by the bot itself
+                if message_obj.get("is_echo"):
+                    continue
+
+                customer_text = message_obj.get("text", "")
+                if sender_id and customer_text:
+                    print(f"\n[NEW DM] From: {sender_id} | Text: {customer_text}")
+                    reply = match_keyword_reply(customer_text)
+                    send_instagram_dm(sender_id, reply)
+
+        return {"status": "EVENT_RECEIVED"}
+
+    return {"status": "IGNORED"}
