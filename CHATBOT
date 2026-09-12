@@ -1,2 +1,28 @@
-instagram_webhook_bot.py
-requirements.txt
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Instagram DM Auto-Responder & AI Customer Support Hub</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            ig: {
+              gradientStart: '#833AB4',
+              gradientMid: '#FD1D1D',
+              gradientEnd: '#FCB045',
+              primary: '#0095F6',
+              primaryHover: '#1877F2',
+              dark: '#0e1017',
+              panel: '#151824',
+              card: '#1c2030',
+              border: '#2a3045',
+              bubbleUser: '#262a38',
+              bubbleBot: '#0095F6',
+              bubbleIgGrad: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)'
+            }
